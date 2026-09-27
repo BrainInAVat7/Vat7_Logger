@@ -1,20 +1,16 @@
 /* Defines the logging system */
 
-// If LOG_LEVEL is 0 or undefined, do not compile this so that memory
-// isn't wasted on unused static buffers
-#if LOG_LEVEL
 
+#include "vat7_logger.h"
+#include "vat7_precision_timing.h"
 
-#include "engine_libc/eng_stdbool.h"
-#include "engine_libc/eng_stdint.h"
-#include "engine_libc/eng_inttypes.h"
-#include "engine_libc/eng_stdarg.h"
-#include "engine_libc/eng_stdio.h"
-#include "engine_libc/eng_string.h"
-#include "engine_libc/eng_pthread.h"
-
-#include "engine_tools/eng_logging.h"
-#include "engine_tools/eng_timing.h"
+#include <stdbool.h>
+#include <stdint.h>
+#include <inttypes.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <string.h>
+#include <pthread.h>
 
 
 #define LOG_FILE "log/logging.log"
@@ -54,49 +50,46 @@ static _Atomic bool logging_thread_running;
 
 /* END SHARED STATE */
 
+static uint64_t vt7_log_start_time_count = 0;
+static double vt7_log_time_frequency = 0.0;
 static FILE *log_output_file;
 static char flush_buffer[FLUSH_BUFFER_SIZE] = {'\0'};
 static pthread_t logging_thread;
 
 
-static void *_log_thread_flush_continuously (void *arg)
+static void *_vt7_log_start_flush_loop (void *arg)
 {
 	(void)arg;
 	bool run = true;
 	while (run)
 	{
-		_eng_logger_flush_log(false);
+		_vt7_log_flush(false);
 		__atomic_load(&logging_thread_running, &run, __ATOMIC_ACQUIRE);
 	}
 	return NULL;
 }
 
 
-void _eng_logger_initialize (void)
+void _vt7_log_init (void)
 {
-	// _eng_logger_shutdown reverses this
+	vt7_log_start_time_count = vt7_pt_count();
+	vt7_log_time_frequency = (double)vt7_pt_frequency();
+	// _vt7_log_shutdown reverses this
 	log_output_file = fopen(LOG_FILE, "w");
 	logging_thread_running = true;
-	pthread_create(&logging_thread, NULL, _log_thread_flush_continuously,
+	pthread_create(&logging_thread, NULL, _vt7_log_start_flush_loop,
 		NULL);
 }
 
 
-/* Return a current timestamp in seconds since timing initialization
- * Timing is intialized as early as possible on program startup.
+/* Return a current timestamp in seconds logging init.
  *
- * This function is a helper for _eng_logger_log
+ * This function is a helper for _vt7_log_create_entry
  */
 static inline double logging_get_timestamp (void)
 {
-	if (!ENG_is_timing_initialized())
-	{
-		return 0.0;
-	}
-
-	return (double)(ENG_timing_precision_count()
-		- ENG_timing_precision_start_count())
-		/ (double)(ENG_timing_precision_frequency());
+	return (double)(vt7_pt_count() - vt7_log_start_time_count)
+		/ vt7_log_time_frequency;
 }
 
 
@@ -104,7 +97,7 @@ static inline double logging_get_timestamp (void)
  * Used by logging macros and should not be called
  * directly by usage code.
  */
-void _eng_logger_log
+void _vt7_log_create_entry
 (
 	int log_level,
 	const char *src_file,
@@ -163,12 +156,12 @@ void _eng_logger_log
 	char *level_string;
 	switch(log_level)
 	{
-		case LOG_LEVEL_CRITICAL: level_string = "CRITICAL"; break;
-		case LOG_LEVEL_ERROR: level_string = "ERROR"; break;
-		case LOG_LEVEL_WARNING: level_string = "WARNING"; break;
-		case LOG_LEVEL_INFO: level_string = "INFO"; break;
-		case LOG_LEVEL_DEBUG: level_string = "DEBUG"; break;
-		case LOG_LEVEL_TRACE: level_string = "TRACE"; break;
+		case VT7_LOG_LEVEL_CRITICAL: level_string = "CRITICAL"; break;
+		case VT7_LOG_LEVEL_ERROR: level_string = "ERROR"; break;
+		case VT7_LOG_LEVEL_WARNING: level_string = "WARNING"; break;
+		case VT7_LOG_LEVEL_INFO: level_string = "INFO"; break;
+		case VT7_LOG_LEVEL_DEBUG: level_string = "DEBUG"; break;
+		case VT7_LOG_LEVEL_TRACE: level_string = "TRACE"; break;
 		default: level_string = "UNDEFINED"; break;
 	}
 
@@ -262,7 +255,7 @@ void _eng_logger_log
 
 /* Flush the log buffer
  */
-void _eng_logger_flush_log(bool force_flush)
+void _vt7_log_flush(bool force_flush)
 {
 	size_t local_read_cursor;
 	__atomic_load(&log_read_cursor, &local_read_cursor,
@@ -344,7 +337,7 @@ void _eng_logger_flush_log(bool force_flush)
 
 
 // TODO document this
-void _eng_logger_shutdown(void)
+void _vt7_log_shutdown(void)
 {
 	if (!logging_thread_running)
 	{
@@ -357,7 +350,7 @@ void _eng_logger_shutdown(void)
 	__atomic_store(&logging_thread_running, &run_log, __ATOMIC_RELEASE);
 	pthread_join(logging_thread, NULL);
 
-	_eng_logger_flush_log(true);
+	_vt7_log_flush(true);
 
 	uint64_t successes;
 	uint64_t failures;
@@ -381,6 +374,3 @@ void _eng_logger_shutdown(void)
 	}
 	fclose(log_output_file);
 }
-
-
-#endif  // LOG_LEVEL > 0
