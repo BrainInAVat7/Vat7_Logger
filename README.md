@@ -23,7 +23,7 @@ learning or projects, I decided to share them.
 
 ## Demo
 
-*placeholder*
+Currently outputs a log to log/logging.log
 
 ---
 
