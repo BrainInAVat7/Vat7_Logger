@@ -1,8 +1,8 @@
 /* Defines the logging system */
 
 
-#include "vat7_logger.h"
-#include "vat7_timing.h"
+#include "logging/vat7_logger.h"
+#include "timing/vat7_timing.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -13,7 +13,7 @@
 #include <pthread.h>
 
 
-#define LOG_FILE "log/logging.log"
+#define LOG_FILE "../log/logging.log"
 #define LOG_BUFFER_SIZE 262144u  // 256 kb
 #define LOG_BUFFER_MASK 262143u
 #define FLUSH_BUFFER_SIZE 4194304u  // 4 mb
@@ -72,9 +72,10 @@ static void *_vt7_log_start_flush_loop (void *arg)
 
 void _vt7_log_init (void)
 {
-	vt7_log_start_time_count = vt7_pt_count();
-	vt7_log_time_frequency = (double)vt7_pt_frequency();
+	vt7_log_start_time_count = vat7_timing_count();
+	vt7_log_time_frequency = (double)vat7_timing_frequency();
 	// _vt7_log_shutdown reverses this
+	//TODO handle directory existence cleanly
 	log_output_file = fopen(LOG_FILE, "w");
 	logging_thread_running = true;
 	pthread_create(&logging_thread, NULL, _vt7_log_start_flush_loop,
@@ -88,7 +89,7 @@ void _vt7_log_init (void)
  */
 static inline double logging_get_timestamp (void)
 {
-	return (double)(vt7_pt_count() - vt7_log_start_time_count)
+	return (double)(vat7_timing_count() - vt7_log_start_time_count)
 		/ vt7_log_time_frequency;
 }
 
