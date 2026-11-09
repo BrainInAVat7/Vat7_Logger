@@ -10,7 +10,12 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <pthread.h>
+#endif
 
 
 #define LOG_FILE "../log/logging.log"
@@ -54,9 +59,31 @@ static uint64_t vt7_log_start_time_count = 0;
 static double vt7_log_time_frequency = 0.0;
 static FILE *log_output_file;
 static char flush_buffer[FLUSH_BUFFER_SIZE] = {'\0'};
+
+#ifdef _WIN32
+static HANDLE logging_thread;
+#else
 static pthread_t logging_thread;
+#endif
 
 
+/*****************************************************************************/
+// TODO extract this into a mini library and clean it up a lot
+/* Thread start function */
+#ifdef _WIN32
+static DWORD WINAPI _vt7_log_start_flush_loop (LPVOID lpparam)
+{
+	(void)lpparam;
+	bool run = true;
+	while (run)
+	{
+		_vt7_log_flush(false);
+		__atomic_load(&logging_thread_running, &run, __ATOMIC_ACQUIRE);
+	}
+	return 0;
+}
+
+#else
 static void *_vt7_log_start_flush_loop (void *arg)
 {
 	(void)arg;
@@ -68,8 +95,10 @@ static void *_vt7_log_start_flush_loop (void *arg)
 	}
 	return NULL;
 }
+#endif
 
 
+/****************************************************************************/
 void _vt7_log_init (void)
 {
 	vt7_log_start_time_count = vat7_timing_count();
@@ -78,8 +107,13 @@ void _vt7_log_init (void)
 	//TODO handle directory existence cleanly
 	log_output_file = fopen(LOG_FILE, "w");
 	logging_thread_running = true;
+	#ifdef _WIN32
+	CreateThread(NULL, 0, _vt7_log_start_flush_loop, NULL, 0,
+			logging_thread);
+	#else
 	pthread_create(&logging_thread, NULL, _vt7_log_start_flush_loop,
 		NULL);
+	#endif
 }
 
 
@@ -349,7 +383,12 @@ void _vt7_log_shutdown(void)
 	}
 	bool run_log = false;
 	__atomic_store(&logging_thread_running, &run_log, __ATOMIC_RELEASE);
+
+	#ifdef _WIN32
+	WaitForSingleObject(logging_thread, INFINITE);
+	#else
 	pthread_join(logging_thread, NULL);
+	#endif
 
 	_vt7_log_flush(true);
 
